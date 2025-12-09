@@ -20,8 +20,6 @@ from gymnasium.utils import EzPickle, seeding
 from pettingzoo import AECEnv
 from pettingzoo.utils import wrappers
 
-from .grid_map import GridMapGenerator
-
 
 try:
     # pettingzoo 1.25+
@@ -122,9 +120,6 @@ class SumoEnvironment(gym.Env):
         sumo_warnings: bool = True,
         additional_sumo_cmd: Optional[str] = None,
         render_mode: Optional[str] = None,
-        enable_grid_map: bool = False,
-        grid_map_size: int = 32,
-        grid_map_type: str = "basic",  # "basic" or "enhanced"
     ) -> None:
         """Initialize the environment."""
         assert render_mode is None or render_mode in self.metadata["render_modes"], "Invalid render mode."
@@ -166,14 +161,7 @@ class SumoEnvironment(gym.Env):
         SumoEnvironment.CONNECTION_LABEL += 1
         self.sumo = None
 
-        # 栅格地图相关配置
-        self.enable_grid_map = enable_grid_map
-        self.grid_map_size = grid_map_size
-        self.grid_map_type = grid_map_type
-        self.grid_map_generator = None
-        
-        if self.enable_grid_map:
-            self.grid_map_generator = GridMapGenerator(self._net, self.grid_map_size)
+
 
         if LIBSUMO:
             traci.start([sumolib.checkBinary("sumo"), "-n", self._net])  # Start only to retrieve traffic light information
@@ -199,6 +187,7 @@ class SumoEnvironment(gym.Env):
         self.out_csv_name = out_csv_name
         self.observations = {ts: None for ts in self.ts_ids}
         self.rewards = {ts: None for ts in self.ts_ids}
+
 
     def _build_traffic_signals(self, conn):
         if not isinstance(self.reward_fn, dict):
@@ -290,6 +279,8 @@ class SumoEnvironment(gym.Env):
         self.num_teleported_vehicles = 0
         self.depart_times = {}  # 记录 {veh_id: depart_step}
         self.travel_times = []  # 记录所有已到达车辆的行程时间
+        
+
 
         if self.single_agent:
             return self._compute_observations()[self.ts_ids[0]], self._compute_info()
@@ -364,13 +355,6 @@ class SumoEnvironment(gym.Env):
         if self.add_per_agent_info:
             info.update(self._get_per_agent_info())
         
-        # 添加栅格地图信息
-        if self.enable_grid_map:
-            grid_map = self._generate_grid_map()
-            if grid_map is not None:
-                info["grid_map"] = grid_map
-                info["grid_map_shape"] = grid_map.shape
-        
         self.metrics.append(info.copy())
         return info
 
@@ -389,6 +373,8 @@ class SumoEnvironment(gym.Env):
         }
 
     def _compute_rewards(self):
+
+        
         self.rewards.update(
             {
                 ts: self.traffic_signals[ts].compute_reward()
@@ -489,68 +475,7 @@ class SumoEnvironment(gym.Env):
         info["agents_total_accumulated_waiting_time"] = sum(accumulated_waiting_time)
         return info
     
-    def _get_vehicle_positions(self) -> Dict[str, Tuple[float, float]]:
-        """获取所有车辆的位置信息"""
-        vehicle_positions = {}
-        for vehicle_id in self.sumo.vehicle.getIDList():
-            try:
-                x, y = self.sumo.vehicle.getPosition(vehicle_id)
-                vehicle_positions[vehicle_id] = (x, y)
-            except Exception:
-                # 如果车辆已经离开，跳过
-                continue
-        return vehicle_positions
-    
-    def _generate_grid_map(self) -> Optional[np.ndarray]:
-        """生成栅格化地图"""
-        if not self.enable_grid_map or self.grid_map_generator is None:
-            return None
-        
-        try:
-            vehicle_positions = self._get_vehicle_positions()
-            
-            if self.grid_map_type == "enhanced":
-                grid_map = self.grid_map_generator.generate_enhanced_grid_map(
-                    vehicle_positions, self.ts_ids
-                )
-            else:
-                grid_map = self.grid_map_generator.generate_grid_map(vehicle_positions)
-            
-            return grid_map
-        except Exception as e:
-            print(f"Error generating grid map: {e}")
-            return None
-    
-    def enable_grid_map_feature(self, enable: bool = True, grid_map_size: Optional[int] = None, 
-                               grid_map_type: Optional[str] = None):
-        """
-        动态启用/禁用栅格地图功能
-        
-        Args:
-            enable: 是否启用栅格地图
-            grid_map_size: 栅格地图大小，如果为None则保持当前设置
-            grid_map_type: 栅格地图类型（"basic"或"enhanced"），如果为None则保持当前设置
-        """
-        self.enable_grid_map = enable
-        
-        if grid_map_size is not None:
-            self.grid_map_size = grid_map_size
-        if grid_map_type is not None:
-            self.grid_map_type = grid_map_type
-        
-        # 如果启用且生成器不存在，则创建生成器
-        if enable and self.grid_map_generator is None:
-            self.grid_map_generator = GridMapGenerator(self._net, self.grid_map_size)
-        
-        print(f"Grid map feature {'enabled' if enable else 'disabled'}. "
-              f"Size: {self.grid_map_size}, Type: {self.grid_map_type}")
-    
-    def get_grid_map_info(self) -> Optional[Dict]:
-        """获取栅格地图相关信息"""
-        if self.grid_map_generator is None:
-            return None
-        
-        return self.grid_map_generator.get_network_info()
+
 
     def close(self):
         """Close the environment and stop the SUMO simulation."""
@@ -666,7 +591,7 @@ class SumoEnvironmentPZ(AECEnv, EzPickle):
         infos = self.env._compute_info()
         for a in self.agents:
             for k, v in infos.items():
-                if k.startswith(a) or k.startswith("system") or k.startswith("grid_map"):
+                if k.startswith(a) or k.startswith("system"):
                     self.infos[a][k] = v
 
     def observation_space(self, agent):

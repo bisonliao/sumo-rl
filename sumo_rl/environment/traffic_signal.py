@@ -90,6 +90,7 @@ class TrafficSignal:
         self.reward_fn = reward_fn
         self.reward_weights = reward_weights
         self.sumo = sumo
+        self.last_arrived_vehicles = 0
 
         if type(self.reward_fn) is list:
             self.reward_dim = len(self.reward_fn)
@@ -232,6 +233,14 @@ class TrafficSignal:
         self.last_ts_waiting_time = ts_wait
         return reward
 
+    def _system_total_arrived_reward(self):
+        # 该奖励函数用于计算两次动作之间到达终点的车辆数，作为系统的吞吐量指标
+        # 注意：这里的 arrived 是指“完全离开仿真”的车辆
+        current_arrived = self.env.num_arrived_vehicles
+        reward = current_arrived - self.last_arrived_vehicles
+        self.last_arrived_vehicles = current_arrived
+        return float(reward)
+
     def _observation_fn_default(self):
         phase_id = [1 if self.green_phase == i else 0 for i in range(self.num_green_phases)]  # one-hot encoding
         min_green = [0 if self.time_since_last_phase_change < self.min_green + self.yellow_time else 1]
@@ -342,4 +351,5 @@ class TrafficSignal:
         "average-speed": _average_speed_reward,
         "queue": _queue_reward,
         "pressure": _pressure_reward,
+        "total-arrived": _system_total_arrived_reward,
     }
